@@ -48,8 +48,21 @@ func main() {
 
 	ctx := context.Background()
 
-	datastore, _ := readDatastore(ctx, db)
-	data, _ := json.MarshalIndent(datastore, "", "  ")
+	datastores, err := readDatastore(ctx, db)
+	if err != nil {
+		log.Printf("reading datastores: %v", err)
+	}
+	hosts, err := readHosts(ctx, db)
+	if err != nil {
+		log.Printf("reading hosts: %v", err)
+	}
+	networks, err := readNetworks(ctx, db)
+	if err != nil {
+		log.Printf("reading networks: %v", err)
+	}
+	clusters := groupByCluster(datastores, hosts, networks)
+
+	data, _ := json.MarshalIndent(clusters, "", "  ")
 	fmt.Println(string(data))
 
 	osList, _ := readOs(ctx, db)
@@ -84,7 +97,7 @@ func readExcel(db *sql.DB, excelFile string) int {
 
 func readDatastore(ctx context.Context, db *sql.DB) ([]definitions.Datastore, error) {
 	query := definitions.SelectDatastoreStmt
-	if !tableExists(db, "vhost") || !tableExists(db, "vhba") {
+	if !tableExists(db, "vhost") {
 		query = definitions.SelectDatastoreSimpleStmt
 	}
 
@@ -101,4 +114,58 @@ func readOs(ctx context.Context, db *sql.DB) ([]definitions.Os, error) {
 		return nil, fmt.Errorf("scanning os: %w", err)
 	}
 	return results, nil
+}
+
+func readHosts(ctx context.Context, db *sql.DB) ([]definitions.Host, error) {
+	var results []definitions.Host
+	if err := sqlscan.Select(ctx, db, &results, definitions.SelectHostStmt); err != nil {
+		return nil, fmt.Errorf("scanning hosts: %w", err)
+	}
+	return results, nil
+}
+
+func readNetworks(ctx context.Context, db *sql.DB) ([]definitions.Network, error) {
+	if !tableExists(db, "vnetwork") {
+		return nil, nil
+	}
+	query := definitions.SelectNetworkStmt
+	if !tableExists(db, "dvport") {
+		query = definitions.SelectNetworkSimpleStmt
+	}
+	var results []definitions.Network
+	if err := sqlscan.Select(ctx, db, &results, query); err != nil {
+		return nil, fmt.Errorf("scanning networks: %w", err)
+	}
+	return results, nil
+}
+
+func groupByCluster(datastores []definitions.Datastore, hosts []definitions.Host, networks []definitions.Network) []definitions.Cluster {
+	clusterMap := make(map[string]*definitions.Cluster)
+
+	for _, ds := range datastores {
+		if _, ok := clusterMap[ds.Cluster]; !ok {
+			clusterMap[ds.Cluster] = &definitions.Cluster{Name: ds.Cluster}
+		}
+		clusterMap[ds.Cluster].Datastores = append(clusterMap[ds.Cluster].Datastores, ds)
+	}
+
+	for _, h := range hosts {
+		if _, ok := clusterMap[h.Cluster]; !ok {
+			clusterMap[h.Cluster] = &definitions.Cluster{Name: h.Cluster}
+		}
+		clusterMap[h.Cluster].Hosts = append(clusterMap[h.Cluster].Hosts, h)
+	}
+
+	for _, n := range networks {
+		if _, ok := clusterMap[n.Cluster]; !ok {
+			clusterMap[n.Cluster] = &definitions.Cluster{Name: n.Cluster}
+		}
+		clusterMap[n.Cluster].Networks = append(clusterMap[n.Cluster].Networks, n)
+	}
+
+	clusters := make([]definitions.Cluster, 0, len(clusterMap))
+	for _, c := range clusterMap {
+		clusters = append(clusters, *c)
+	}
+	return clusters
 }
