@@ -20,16 +20,8 @@ type rvToolsPreprocessor struct {
 }
 
 func (pp *rvToolsPreprocessor) Process(db *sql.DB) error {
-	query := pp.builder.IngestRvtoolsQuery(pp.excelFile)
-	for stmt := range strings.SplitSeq(query, ";") {
-		stmt = strings.TrimSpace(stmt)
-		if stmt == "" {
-			continue
-		}
-		// Not all sheets may exist in every RVTools export, continue on error
-		_, _ = db.Exec(stmt)
-	}
-	return nil
+	_, err := db.Exec(pp.builder.IngestRvtoolsQuery(pp.excelFile))
+	return err
 }
 
 type sqlitePreprocessor struct {
@@ -38,17 +30,8 @@ type sqlitePreprocessor struct {
 }
 
 func (pp *sqlitePreprocessor) Process(db *sql.DB) error {
-	query := pp.builder.IngestSqliteQuery(pp.sqliteFile)
-	for stmt := range strings.SplitSeq(query, ";") {
-		stmt = strings.TrimSpace(stmt)
-		if stmt == "" {
-			continue
-		}
-		if _, err := db.Exec(stmt); err != nil {
-			return fmt.Errorf("executing statement: %w", err)
-		}
-	}
-	return nil
+	_, err := db.Exec(pp.builder.IngestSqliteQuery(pp.sqliteFile))
+	return err
 }
 
 func NewRvToolParser(db *sql.DB, excelFile string) *Parser {
