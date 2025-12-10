@@ -4,7 +4,6 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
-	"sort"
 	"strings"
 	"text/template"
 )
@@ -67,36 +66,6 @@ func (q Type) String() string {
 	}
 }
 
-// SchemaContext holds information about available tables and columns in the database.
-type SchemaContext struct {
-	Tables  map[string]bool            // table name -> exists
-	Columns map[string]map[string]bool // table name -> column name -> exists
-}
-
-func (s *SchemaContext) HasTable(table string) bool {
-	return s.Tables[table]
-}
-
-func (s *SchemaContext) HasColumn(table, column string) bool {
-	if cols, ok := s.Columns[table]; ok {
-		return cols[column]
-	}
-	return false
-}
-
-func (s *SchemaContext) GetColumnsLike(table, prefix string) []string {
-	var result []string
-	if cols, ok := s.Columns[table]; ok {
-		for col := range cols {
-			if strings.HasPrefix(col, prefix) {
-				result = append(result, col)
-			}
-		}
-	}
-	sort.Strings(result)
-	return result
-}
-
 // QueryBuilder builds SQL queries from templates.
 type QueryBuilder struct{}
 
@@ -125,30 +94,15 @@ func (b *QueryBuilder) IngestSqliteQuery(filePath string) string {
 }
 
 // Build generates all SQL queries based on the schema context.
-func (b *QueryBuilder) Build(ctx *SchemaContext) (map[Type]string, error) {
+func (b *QueryBuilder) Build() (map[Type]string, error) {
 	queries := make(map[Type]string)
 
-	if ctx.HasTable("vinfo") {
-		query, err := b.buildVMQuery(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("building VM query: %w", err)
-		}
-		queries[VM] = query
-		queries[Os] = b.buildQuery("os_query", osQueryTemplate, nil)
-		queries[VCenter] = b.buildQuery("vcenter_query", vcenterQueryTemplate, nil)
-	}
-
-	if ctx.HasTable("vdatastore") && ctx.HasTable("vhost") {
-		queries[Datastore] = b.buildDatastoreQuery()
-	}
-
-	if ctx.HasTable("vnetwork") {
-		queries[Network] = b.buildNetworkQuery()
-	}
-
-	if ctx.HasTable("vhost") {
-		queries[Host] = b.buildQuery("host_query", hostQueryTemplate, nil)
-	}
+	queries[VM] = b.buildVMQuery()
+	queries[Os] = b.buildQuery("os_query", osQueryTemplate, nil)
+	queries[VCenter] = b.buildQuery("vcenter_query", vcenterQueryTemplate, nil)
+	queries[Datastore] = b.buildDatastoreQuery()
+	queries[Network] = b.buildNetworkQuery()
+	queries[Host] = b.buildQuery("host_query", hostQueryTemplate, nil)
 
 	return queries, nil
 }
@@ -157,20 +111,14 @@ type vmQueryParams struct {
 	NetworkColumns string
 }
 
-func (b *QueryBuilder) buildVMQuery(ctx *SchemaContext) (string, error) {
-	networkCols := ctx.GetColumnsLike("vinfo", "Network #")
-	var networkColumns string
-	if len(networkCols) == 0 {
-		networkColumns = "NULL"
-	} else {
-		quoted := make([]string, len(networkCols))
-		for i, col := range networkCols {
-			quoted[i] = fmt.Sprintf(`i."%s"`, col)
-		}
-		networkColumns = strings.Join(quoted, ", ")
+func (b *QueryBuilder) buildVMQuery() string {
+	quoted := make([]string, 0, 25)
+	for i := 1; i <= 25; i++ {
+		quoted = append(quoted, fmt.Sprintf(`i."Network #%d"`, i))
 	}
+	networkColumns := strings.Join(quoted, ", ")
 
-	return b.buildQuery("vm_query", vmQueryTemplate, vmQueryParams{NetworkColumns: networkColumns}), nil
+	return b.buildQuery("vm_query", vmQueryTemplate, vmQueryParams{NetworkColumns: networkColumns})
 }
 
 func (b *QueryBuilder) buildDatastoreQuery() string {

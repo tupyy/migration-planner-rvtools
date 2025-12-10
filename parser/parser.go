@@ -109,14 +109,8 @@ func (p *Parser) Parse() (models.Inventory, error) {
 		}
 	}
 
-	// Build schema context from actual data
-	schemaCtx, err := p.buildSchemaContext()
-	if err != nil {
-		return models.Inventory{}, fmt.Errorf("building schema context: %w", err)
-	}
-
 	// Build queries based on available tables/columns
-	queries, err := p.builder.Build(schemaCtx)
+	queries, err := p.builder.Build()
 	if err != nil {
 		return models.Inventory{}, fmt.Errorf("building queries: %w", err)
 	}
@@ -162,48 +156,6 @@ func (p *Parser) createSchema() error {
 	q := p.builder.CreateSchemaQuery()
 	_, err := p.db.Exec(q)
 	return err
-}
-
-func (p *Parser) buildSchemaContext() (*SchemaContext, error) {
-	ctx := &SchemaContext{
-		Tables:  make(map[string]bool),
-		Columns: make(map[string]map[string]bool),
-	}
-
-	// Query all tables
-	rows, err := p.db.Query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'")
-	if err != nil {
-		return nil, fmt.Errorf("querying tables: %w", err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var tableName string
-		if err := rows.Scan(&tableName); err != nil {
-			return nil, fmt.Errorf("scanning table name: %w", err)
-		}
-		ctx.Tables[tableName] = true
-		ctx.Columns[tableName] = make(map[string]bool)
-	}
-
-	// Query all columns for each table
-	colRows, err := p.db.Query("SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'main'")
-	if err != nil {
-		return nil, fmt.Errorf("querying columns: %w", err)
-	}
-	defer colRows.Close()
-
-	for colRows.Next() {
-		var tableName, columnName string
-		if err := colRows.Scan(&tableName, &columnName); err != nil {
-			return nil, fmt.Errorf("scanning column: %w", err)
-		}
-		if ctx.Columns[tableName] != nil {
-			ctx.Columns[tableName][columnName] = true
-		}
-	}
-
-	return ctx, nil
 }
 
 func (p *Parser) readDatastores(ctx context.Context, query string) ([]models.Datastore, error) {
