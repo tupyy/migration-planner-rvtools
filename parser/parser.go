@@ -100,21 +100,37 @@ func newParser(db *sql.DB) *Parser {
 	}
 }
 
-func (p *Parser) Parse() (models.Inventory, error) {
-	ctx := context.Background()
-
+func (p *Parser) Init() error {
 	if p.preprocessor == nil {
-		return models.Inventory{}, errors.New("no preprocessor has been defined")
+		return errors.New("no preprocessor has been defined")
 	}
 
 	if err := p.createSchema(); err != nil {
-		return models.Inventory{}, fmt.Errorf("creating schema: %w", err)
+		return fmt.Errorf("creating schema: %w", err)
 	}
 
 	if err := p.preprocessor.Process(p.db); err != nil {
-		return models.Inventory{}, fmt.Errorf("failed to preprocess: %v", err)
+		return fmt.Errorf("failed to preprocess: %v", err)
 	}
 
+	return nil
+}
+
+func (p *Parser) Vms(ctx context.Context) ([]models.VM, error) {
+	q, err := p.builder.buildVMQuery()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build vm query: %v", err)
+	}
+
+	vms, err := p.readVMs(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("reading VMs: %w", err)
+	}
+
+	return vms, nil
+}
+
+func (p *Parser) Parse(ctx context.Context) (models.Inventory, error) {
 	// Build queries based on available tables/columns
 	queries, err := p.builder.Build()
 	if err != nil {

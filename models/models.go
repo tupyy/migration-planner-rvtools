@@ -119,15 +119,15 @@ type NIC struct {
 }
 
 type Concern struct {
-	Id         string `json:"id"`
-	Label      string `json:"label"`
-	Category   string `json:"category"`
-	Assessment string `json:"assessment"`
+	Id         string `json:"id" db:"Concern_ID"`
+	Label      string `json:"label" db:"Label"`
+	Category   string `json:"category" db:"Category"`
+	Assessment string `json:"assessment" db:"Assessment"`
 }
 
 type Inventory struct {
-	VcenterId string                   `json:"vcenterId"`         // unique identifier for vCenter (from "VI SDK UUID" in vInfo)
-	Clusters  map[string]InventoryData `json:"clusters"`          // cluster ID -> per-cluster inventory data
+	VcenterId string                   `json:"vcenterId"`           // unique identifier for vCenter (from "VI SDK UUID" in vInfo)
+	Clusters  map[string]InventoryData `json:"clusters"`            // cluster ID -> per-cluster inventory data
 	OsSummary []Os                     `json:"osSummary,omitempty"` // OS distribution summary (vcenter-level)
 }
 
