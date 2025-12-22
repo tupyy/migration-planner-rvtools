@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"flag"
@@ -57,6 +58,9 @@ func main() {
 	db := sql.OpenDB(c)
 	defer db.Close()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	if err := loadExtensions(db); err != nil {
 		log.Printf("loading extensions: %v", err)
 		os.Exit(1)
@@ -69,7 +73,11 @@ func main() {
 		p = parser.NewSqliteParser(db, sqliteFile)
 	}
 
-	inventory, err := p.Parse()
+	if err := p.Init(); err != nil {
+		log.Fatalf("failed to initialize parser: %v", err)
+	}
+
+	inventory, err := p.Parse(ctx)
 	if err != nil {
 		log.Fatalf("parsing: %v", err)
 	}
