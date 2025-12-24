@@ -132,8 +132,9 @@ type Inventory struct {
 }
 
 type InventoryData struct {
-	Infra Infra `json:"infra"` // infrastructure data (hosts, datastores, networks)
-	VMs   []VM  `json:"vms"`   // virtual machines
+	Infra      Infra      `json:"infra"` // infrastructure data (hosts, datastores, networks)
+	VMsSummary VMsSummary `json:"vmsSummary"`
+	VMs        []VM       `json:"vms"` // virtual machines
 }
 
 type Infra struct {
@@ -144,6 +145,19 @@ type Infra struct {
 	TotalHosts            int            `json:"totalHosts"`                      // total number of hosts
 	TotalDatacenters      int            `json:"totalDatacenters,omitempty"`      // total number of datacenters
 	ClustersPerDatacenter []int          `json:"clustersPerDatacenter,omitempty"` // number of clusters per datacenter
+}
+type VMsSummary struct {
+	DiskSizeTier          map[string]DiskSummary `json:"diskSizeTier,omitempty"`
+	DiskTypes             map[string]DiskSummary `json:"diskTypes,omitempty"`
+	DistributionByCpuTier map[string]int         `json:"distributionByCpuTier,omitempty"`
+	OsInfo                []Os                   `json:"osSummary,omitempty"` // OS distribution summary
+	PowerStates           map[string]int         `json:"powerStates"`
+	Total                 int                    `json:"total"`
+}
+
+type DiskSummary struct {
+	TotalSizeTB float64 `json:"totalSizeTB"`
+	VmCount     int     `json:"vmCount"`
 }
 
 // Disks is a slice of Disk that implements sql.Scanner for DuckDB LIST type
@@ -253,54 +267,4 @@ func (n *Networks) Scan(value interface{}) error {
 
 func (n Networks) Value() (driver.Value, error) {
 	return n, nil
-}
-
-func toString(v interface{}) string {
-	if v == nil {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return fmt.Sprintf("%v", v)
-}
-
-func toInt64(v interface{}) int64 {
-	if v == nil {
-		return 0
-	}
-	switch val := v.(type) {
-	case int64:
-		return val
-	case int32:
-		return int64(val)
-	case int:
-		return int64(val)
-	case float64:
-		return int64(val)
-	case string:
-		var i int64
-		fmt.Sscanf(val, "%d", &i)
-		return i
-	}
-	return 0
-}
-
-func toBool(v interface{}) bool {
-	if v == nil {
-		return false
-	}
-	switch val := v.(type) {
-	case bool:
-		return val
-	case string:
-		return val == "true" || val == "True" || val == "1" || val == "Yes"
-	case int64:
-		return val != 0
-	case int32:
-		return val != 0
-	case int:
-		return val != 0
-	}
-	return false
 }

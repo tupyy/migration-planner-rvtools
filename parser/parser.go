@@ -280,56 +280,51 @@ func (p *Parser) readVMs(ctx context.Context, query string) ([]models.VM, error)
 	return vms, nil
 }
 
+func addToClusterMap(clusterMap map[string]*models.InventoryData, cluster string, item interface{}) {
+	cluster = strings.TrimSpace(cluster)
+	if cluster == "" {
+		return
+	}
+	if _, ok := clusterMap[cluster]; !ok {
+		clusterMap[cluster] = &models.InventoryData{}
+	}
+
+	switch v := item.(type) {
+	case models.Datastore:
+		clusterMap[cluster].Infra.Datastores = append(clusterMap[cluster].Infra.Datastores, v)
+	case models.Host:
+		clusterMap[cluster].Infra.Hosts = append(clusterMap[cluster].Infra.Hosts, v)
+		clusterMap[cluster].Infra.TotalHosts++
+	case models.Network:
+		clusterMap[cluster].Infra.Networks = append(clusterMap[cluster].Infra.Networks, v)
+	case models.VM:
+		clusterMap[cluster].VMs = append(clusterMap[cluster].VMs, v)
+	default:
+		return
+	}
+}
+
 func (p *Parser) buildInventory(vcenterID string, datastores []models.Datastore, hosts []models.Host, networks []models.Network, vms []models.VM, osSummary []models.Os) models.Inventory {
 	clusterMap := make(map[string]*models.InventoryData)
 
 	// Group datastores by cluster
 	for _, ds := range datastores {
-		cluster := strings.TrimSpace(ds.Cluster)
-		if cluster == "" {
-			continue
-		}
-		if _, ok := clusterMap[cluster]; !ok {
-			clusterMap[cluster] = &models.InventoryData{}
-		}
-		clusterMap[cluster].Infra.Datastores = append(clusterMap[cluster].Infra.Datastores, ds)
+		addToClusterMap(clusterMap, ds.Cluster, ds)
 	}
 
 	// Group hosts by cluster
 	for _, h := range hosts {
-		cluster := strings.TrimSpace(h.Cluster)
-		if cluster == "" {
-			continue
-		}
-		if _, ok := clusterMap[cluster]; !ok {
-			clusterMap[cluster] = &models.InventoryData{}
-		}
-		clusterMap[cluster].Infra.Hosts = append(clusterMap[cluster].Infra.Hosts, h)
-		clusterMap[cluster].Infra.TotalHosts++
+		addToClusterMap(clusterMap, h.Cluster, h)
 	}
 
 	// Group networks by cluster
 	for _, n := range networks {
-		cluster := strings.TrimSpace(n.Cluster)
-		if cluster == "" {
-			continue
-		}
-		if _, ok := clusterMap[cluster]; !ok {
-			clusterMap[cluster] = &models.InventoryData{}
-		}
-		clusterMap[cluster].Infra.Networks = append(clusterMap[cluster].Infra.Networks, n)
+		addToClusterMap(clusterMap, n.Cluster, n)
 	}
 
 	// Group VMs by cluster
 	for _, vm := range vms {
-		cluster := strings.TrimSpace(vm.Cluster)
-		if cluster == "" {
-			continue
-		}
-		if _, ok := clusterMap[cluster]; !ok {
-			clusterMap[cluster] = &models.InventoryData{}
-		}
-		clusterMap[cluster].VMs = append(clusterMap[cluster].VMs, vm)
+		addToClusterMap(clusterMap, vm.Cluster, vm)
 	}
 
 	// Build final inventory
