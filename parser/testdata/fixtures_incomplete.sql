@@ -170,3 +170,12 @@ CREATE TABLE vhba (
     "Device" VARCHAR,
     "Type" VARCHAR
 );
+
+-- concerns: VM validation concerns (empty for base fixtures)
+CREATE TABLE concerns (
+    "VM_ID" VARCHAR,
+    "Concern_ID" VARCHAR,
+    "Label" VARCHAR,
+    "Category" VARCHAR,
+    "Assessment" VARCHAR
+);

@@ -1,0 +1,16 @@
+{{- /*
+Networks Used By VMs Query Template - Returns networks actually used by VMs in a cluster.
+
+Template Parameters:
+  - ClusterFilter: cluster name (required)
+*/ -}}
+SELECT DISTINCT
+    n."Network" AS name,
+    n."Type" AS type,
+    n."Switch" AS dvswitch,
+    '' AS vlan_id,
+    COUNT(DISTINCT n."VM ID") AS vms_count
+FROM vnetwork n
+JOIN vinfo i ON n."VM ID" = i."VM ID"
+WHERE i."Cluster" = '{{.ClusterFilter}}'
+GROUP BY n."Network", n."Type", n."Switch";

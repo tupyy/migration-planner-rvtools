@@ -4,12 +4,14 @@ OS Query Template - Generates DuckDB SQL to aggregate OS distribution.
 This query groups VMs by their OS (as reported by VMware Tools) and counts them.
 Used to generate OS distribution summary for the inventory.
 
-No template parameters - this query doesn't vary based on available tables.
+Template Parameters:
+  - ClusterFilter: filter by cluster name
 */ -}}
 SELECT
     "OS according to the VMware Tools" as "name",
     COUNT("OS according to the VMware Tools") as "count"
 FROM vinfo
 WHERE "OS according to the VMware Tools" IS NOT NULL
+{{- if .ClusterFilter }} AND "Cluster" = '{{.ClusterFilter}}'{{end}}
 GROUP BY "OS according to the VMware Tools"
 ORDER BY "OS according to the VMware Tools";
