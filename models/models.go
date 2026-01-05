@@ -84,6 +84,7 @@ type VM struct {
 	TotalDiskCapacityMiB     int32    `db:"Total disk capacity MiB"` // vinfo
 	ProvisionedMiB           int32    `db:"Provisioned MiB"`         // vinfo
 	ResourcePool             string   `db:"Resource pool"`           // vinfo
+	Concerns                 Concerns // concerns table (via LEFT JOIN)
 }
 
 // Disk represents a virtual disk from the vdisk table
@@ -253,6 +254,39 @@ func (n *Networks) Scan(value interface{}) error {
 
 func (n Networks) Value() (driver.Value, error) {
 	return n, nil
+}
+
+type Concerns []Concern
+
+func (c *Concerns) Scan(value interface{}) error {
+	if value == nil {
+		*c = nil
+		return nil
+	}
+	slice, ok := value.([]interface{})
+	if !ok {
+		return fmt.Errorf("Concerns.Scan: expected []interface{}, got %T", value)
+	}
+	result := make([]Concern, 0, len(slice))
+	for _, item := range slice {
+		m, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		concern := Concern{
+			Id:         toString(m["Id"]),
+			Label:      toString(m["Label"]),
+			Category:   toString(m["Category"]),
+			Assessment: toString(m["Assessment"]),
+		}
+		result = append(result, concern)
+	}
+	*c = result
+	return nil
+}
+
+func (c Concerns) Value() (driver.Value, error) {
+	return c, nil
 }
 
 func toString(v interface{}) string {

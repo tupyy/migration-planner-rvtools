@@ -184,3 +184,12 @@ CREATE TABLE vhba (
 INSERT INTO vhba VALUES
 ('vmhba0', 'iSCSI'),
 ('vmhba1', 'FibreChannel');
+
+-- concerns: VM validation concerns
+CREATE TABLE concerns (
+    "VM_ID" VARCHAR,
+    "Concern_ID" VARCHAR,
+    "Label" VARCHAR,
+    "Category" VARCHAR,
+    "Assessment" VARCHAR
+);

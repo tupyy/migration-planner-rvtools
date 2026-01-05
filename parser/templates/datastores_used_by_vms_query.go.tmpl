@@ -1,0 +1,18 @@
+{{- /*
+Datastores Used By VMs Query Template - Returns datastores actually used by VMs in a cluster.
+
+Template Parameters:
+  - ClusterFilter: cluster name (required)
+*/ -}}
+SELECT DISTINCT
+    ds."Hosts" AS hosts,
+    ds."Address" AS address,
+    ds."Name" AS name,
+    ds."Free MiB" AS free_mib,
+    ds."MHA" AS mha,
+    ds."Capacity MiB" AS capacity_mib,
+    ds."Type" AS type
+FROM vdatastore ds
+JOIN vdisk d ON ds."Name" = REGEXP_EXTRACT(d."Path", '\[([^\]]+)\]', 1)
+JOIN vinfo i ON d."VM ID" = i."VM ID"
+WHERE i."Cluster" = '{{.ClusterFilter}}';
