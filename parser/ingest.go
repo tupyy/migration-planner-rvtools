@@ -11,29 +11,56 @@ import (
 
 var stmtRegex = regexp.MustCompile(`(?s)(CREATE|INSERT|UPDATE|DROP|ALTER|WITH|INSTALL|LOAD|ATTACH|DETACH).*?;`)
 
-// IngestRvTools ingests data from an RVTools Excel file and runs validation if a validator is configured.
-// TODO: Add file validation (empty/truncated detection) and schema validation (required sheets/columns)
-func (p *Parser) IngestRvTools(ctx context.Context, excelFile string) error {
+// IngestRvTools ingests data from an RVTools Excel file, runs VM validation if a validator
+// is configured, and validates the schema for required tables/columns.
+// Returns a ValidationResult with errors (fatal) and warnings (non-fatal).
+// If ValidationResult.HasErrors() is true, the inventory cannot be built.
+func (p *Parser) IngestRvTools(ctx context.Context, excelFile string) (ValidationResult, error) {
 	query, err := p.builder.IngestRvtoolsQuery(excelFile)
 	if err != nil {
-		return fmt.Errorf("building rvtools ingestion query: %w", err)
+		return ValidationResult{}, fmt.Errorf("building rvtools ingestion query: %w", err)
 	}
 	if err := p.executeStatements(query); err != nil {
-		return fmt.Errorf("ingesting rvtools data: %w", err)
+		return ValidationResult{}, fmt.Errorf("ingesting rvtools data: %w", err)
 	}
-	return p.validate(ctx)
+
+	// Validate schema - check for required tables/columns/data
+	result := p.ValidateSchema(ctx)
+
+	// Only run VM validation if schema is valid (we have VMs to validate)
+	if result.IsValid() {
+		if err := p.validateVMs(ctx); err != nil {
+			return result, fmt.Errorf("validating VMs: %w", err)
+		}
+	}
+
+	return result, nil
 }
 
-// IngestSqlite ingests data from a forklift SQLite database and runs validation if a validator is configured.
-func (p *Parser) IngestSqlite(ctx context.Context, sqliteFile string) error {
+// IngestSqlite ingests data from a forklift SQLite database, runs VM validation if a validator
+// is configured, and validates the schema for required tables/columns.
+// Returns a ValidationResult with errors (fatal) and warnings (non-fatal).
+// If ValidationResult.HasErrors() is true, the inventory cannot be built.
+func (p *Parser) IngestSqlite(ctx context.Context, sqliteFile string) (ValidationResult, error) {
 	query, err := p.builder.IngestSqliteQuery(sqliteFile)
 	if err != nil {
-		return fmt.Errorf("building sqlite ingestion query: %w", err)
+		return ValidationResult{}, fmt.Errorf("building sqlite ingestion query: %w", err)
 	}
 	if err := p.executeStatements(query); err != nil {
-		return fmt.Errorf("ingesting sqlite data: %w", err)
+		return ValidationResult{}, fmt.Errorf("ingesting sqlite data: %w", err)
 	}
-	return p.validate(ctx)
+
+	// Validate schema - check for required tables/columns/data
+	result := p.ValidateSchema(ctx)
+
+	// Only run VM validation if schema is valid (we have VMs to validate)
+	if result.IsValid() {
+		if err := p.validateVMs(ctx); err != nil {
+			return result, fmt.Errorf("validating VMs: %w", err)
+		}
+	}
+
+	return result, nil
 }
 
 // executeStatements executes a multi-statement SQL string.
@@ -52,8 +79,8 @@ func (p *Parser) executeStatements(query string) error {
 	return nil
 }
 
-// validate is the internal implementation of validation.
-func (p *Parser) validate(ctx context.Context) error {
+// validateVMs runs the configured VM validator (e.g., OPA) to populate the concerns table.
+func (p *Parser) validateVMs(ctx context.Context) error {
 	if p.validator == nil {
 		return nil
 	}

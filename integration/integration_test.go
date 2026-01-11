@@ -76,8 +76,18 @@ func TestFullInventoryFlow(t *testing.T) {
 	}
 
 	// Ingest RVTools data (this also runs validation)
-	if err := p.IngestRvTools(ctx, rvtoolsFile); err != nil {
+	result, err := p.IngestRvTools(ctx, rvtoolsFile)
+	if err != nil {
 		t.Fatalf("Failed to ingest RVTools: %v", err)
+	}
+	if result.HasErrors() {
+		t.Fatalf("Schema validation failed: %v", result.Error())
+	}
+	if result.HasWarnings() {
+		fmt.Printf("Schema validation warnings:\n")
+		for _, w := range result.Warnings {
+			fmt.Printf("  - [%s] %s\n", w.Code, w.Message)
+		}
 	}
 
 	// Query individual data - caller is responsible for building their own inventory
@@ -124,8 +134,12 @@ func TestQueryMethods(t *testing.T) {
 	if err := p.Init(); err != nil {
 		t.Fatalf("Failed to initialize: %v", err)
 	}
-	if err := p.IngestRvTools(ctx, rvtoolsFile); err != nil {
+	result, err := p.IngestRvTools(ctx, rvtoolsFile)
+	if err != nil {
 		t.Fatalf("Failed to ingest: %v", err)
+	}
+	if result.HasErrors() {
+		t.Fatalf("Schema validation failed: %v", result.Error())
 	}
 
 	// Test various query methods
