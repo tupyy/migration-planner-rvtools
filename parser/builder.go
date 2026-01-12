@@ -2,69 +2,33 @@ package parser
 
 import (
 	"bytes"
-	_ "embed"
+	"embed"
 	"fmt"
 	"strings"
 	"text/template"
 )
 
-//go:embed templates/create_schema.go.tmpl
-var createSchemaTemplate string
+//go:embed templates/*.tmpl
+var templateFS embed.FS
 
-//go:embed templates/ingest_rvtools.go.tmpl
-var ingestRvtoolsTemplate string
-
-//go:embed templates/ingest_sqlite.go.tmpl
-var ingestSqliteTemplate string
-
-//go:embed templates/vm_query.go.tmpl
-var vmQueryTemplate string
-
-//go:embed templates/datastore_query.go.tmpl
-var datastoreQueryTemplate string
-
-//go:embed templates/network_query.go.tmpl
-var networkQueryTemplate string
-
-//go:embed templates/os_query.go.tmpl
-var osQueryTemplate string
-
-//go:embed templates/host_query.go.tmpl
-var hostQueryTemplate string
-
-//go:embed templates/vcenter_query.go.tmpl
-var vcenterQueryTemplate string
-
-// Type represents the type of query to build
-type Type int
-
-const (
-	VM Type = iota
-	Datastore
-	Network
-	Host
-	Os
-	VCenter
-)
-
-func (q Type) String() string {
-	switch q {
-	case VM:
-		return "vm"
-	case Datastore:
-		return "datastore"
-	case Network:
-		return "network"
-	case Host:
-		return "host"
-	case Os:
-		return "os"
-	case VCenter:
-		return "vcenter"
-	default:
-		return "unknown"
+// getTemplate reads a template from the embedded filesystem.
+func getTemplate(name string) (string, error) {
+	content, err := templateFS.ReadFile("templates/" + name + ".go.tmpl")
+	if err != nil {
+		return "", fmt.Errorf("reading template %s: %w", name, err)
 	}
+	return string(content), nil
 }
+
+// mustGetTemplate reads a template and panics on error (for init-time loading).
+func mustGetTemplate(name string) string {
+	content, err := getTemplate(name)
+	if err != nil {
+		panic(err)
+	}
+	return content
+}
+
 
 // QueryBuilder builds SQL queries from templates.
 type QueryBuilder struct{}
@@ -80,67 +44,32 @@ type ingestParams struct {
 
 // CreateSchemaQuery returns queries to create all RVTools tables with proper schema.
 func (b *QueryBuilder) CreateSchemaQuery() (string, error) {
-	return b.buildQuery("create_schema", createSchemaTemplate, nil)
+	return b.buildQuery("create_schema", mustGetTemplate("create_schema"), nil)
 }
 
 // IngestRvtoolsQuery returns a query that inserts data from an RVTools Excel file into schema tables.
 func (b *QueryBuilder) IngestRvtoolsQuery(filePath string) (string, error) {
-	return b.buildQuery("ingest_rvtools", ingestRvtoolsTemplate, ingestParams{FilePath: filePath})
+	return b.buildQuery("ingest_rvtools", mustGetTemplate("ingest_rvtools"), ingestParams{FilePath: filePath})
 }
 
 // IngestSqliteQuery returns a query that creates RVTools-shaped tables from a forklift SQLite database.
 func (b *QueryBuilder) IngestSqliteQuery(filePath string) (string, error) {
-	return b.buildQuery("ingest_sqlite", ingestSqliteTemplate, ingestParams{FilePath: filePath})
+	return b.buildQuery("ingest_sqlite", mustGetTemplate("ingest_sqlite"), ingestParams{FilePath: filePath})
 }
 
-// Build generates all SQL queries based on the schema context.
-func (b *QueryBuilder) Build() (map[Type]string, error) {
-	queries := make(map[Type]string)
-
-	q, err := b.buildVMQuery()
-	if err != nil {
-		return map[Type]string{}, fmt.Errorf("failed to build vm query: %v", err)
-	}
-	queries[VM] = q
-
-	q, err = b.buildQuery("os_query", osQueryTemplate, nil)
-	if err != nil {
-		return map[Type]string{}, fmt.Errorf("failed to build os_query: %v", err)
-	}
-	queries[Os] = q
-
-	q, err = b.buildQuery("vcenter_query", vcenterQueryTemplate, nil)
-	if err != nil {
-		return map[Type]string{}, fmt.Errorf("failed to build vcenter_query: %v", err)
-	}
-	queries[VCenter] = q
-
-	q, err = b.buildDatastoreQuery()
-	if err != nil {
-		return map[Type]string{}, fmt.Errorf("failed to build datastore query: %v", err)
-	}
-	queries[Datastore] = q
-
-	q, err = b.buildNetworkQuery()
-	if err != nil {
-		return map[Type]string{}, fmt.Errorf("fauled to build network query: %v", err)
-	}
-	queries[Network] = q
-
-	q, err = b.buildQuery("host_query", hostQueryTemplate, nil)
-	if err != nil {
-		return map[Type]string{}, fmt.Errorf("fauled to build host_query: %v", err)
-	}
-	queries[Host] = q
-
-	return queries, nil
+// queryParams holds all template parameters for queries.
+type queryParams struct {
+	NetworkColumns   string
+	ClusterFilter    string
+	OSFilter         string
+	PowerStateFilter string
+	Category         string
+	Limit            int
+	Offset           int
 }
 
-type vmQueryParams struct {
-	NetworkColumns string
-}
-
-func (b *QueryBuilder) buildVMQuery() (string, error) {
+// VMQuery builds the VM query with filters and pagination.
+func (b *QueryBuilder) VMQuery(filters Filters, options Options) (string, error) {
 	const maxNetworkNumbers = 25
 	quoted := make([]string, 0, maxNetworkNumbers)
 	for i := 1; i <= maxNetworkNumbers; i++ {
@@ -148,15 +77,219 @@ func (b *QueryBuilder) buildVMQuery() (string, error) {
 	}
 	networkColumns := strings.Join(quoted, ", ")
 
-	return b.buildQuery("vm_query", vmQueryTemplate, vmQueryParams{NetworkColumns: networkColumns})
+	params := queryParams{
+		NetworkColumns:   networkColumns,
+		ClusterFilter:    filters.Cluster,
+		OSFilter:         filters.OS,
+		PowerStateFilter: filters.PowerState,
+		Limit:            options.Limit,
+		Offset:           options.Offset,
+	}
+	return b.buildQuery("vm_query", mustGetTemplate("vm_query"), params)
 }
 
-func (b *QueryBuilder) buildDatastoreQuery() (string, error) {
-	return b.buildQuery("datastore_query", datastoreQueryTemplate, nil)
+// DatastoreQuery builds the datastore query with filters and pagination.
+func (b *QueryBuilder) DatastoreQuery(filters Filters, options Options) (string, error) {
+	params := queryParams{
+		ClusterFilter: filters.Cluster,
+		Limit:         options.Limit,
+		Offset:        options.Offset,
+	}
+	return b.buildQuery("datastore_query", mustGetTemplate("datastore_query"), params)
 }
 
-func (b *QueryBuilder) buildNetworkQuery() (string, error) {
-	return b.buildQuery("network_query", networkQueryTemplate, nil)
+// NetworkQuery builds the network query with filters and pagination.
+func (b *QueryBuilder) NetworkQuery(filters Filters, options Options) (string, error) {
+	params := queryParams{
+		ClusterFilter: filters.Cluster,
+		Limit:         options.Limit,
+		Offset:        options.Offset,
+	}
+	return b.buildQuery("network_query", mustGetTemplate("network_query"), params)
+}
+
+// HostQuery builds the host query with filters and pagination.
+func (b *QueryBuilder) HostQuery(filters Filters, options Options) (string, error) {
+	params := queryParams{
+		ClusterFilter: filters.Cluster,
+		Limit:         options.Limit,
+		Offset:        options.Offset,
+	}
+	return b.buildQuery("host_query", mustGetTemplate("host_query"), params)
+}
+
+// OsQuery builds the OS summary query with filters.
+func (b *QueryBuilder) OsQuery(filters Filters) (string, error) {
+	params := queryParams{
+		ClusterFilter: filters.Cluster,
+	}
+	return b.buildQuery("os_query", mustGetTemplate("os_query"), params)
+}
+
+// ClustersQuery builds the clusters query.
+func (b *QueryBuilder) ClustersQuery() (string, error) {
+	return b.buildQuery("clusters_query", mustGetTemplate("clusters_query"), nil)
+}
+
+// VMCountQuery builds the VM count query with filters.
+func (b *QueryBuilder) VMCountQuery(filters Filters) (string, error) {
+	params := queryParams{
+		ClusterFilter:    filters.Cluster,
+		PowerStateFilter: filters.PowerState,
+	}
+	return b.buildQuery("vm_count_query", mustGetTemplate("vm_count_query"), params)
+}
+
+// PowerStateCountsQuery builds the power state counts query.
+func (b *QueryBuilder) PowerStateCountsQuery(filters Filters) (string, error) {
+	params := queryParams{
+		ClusterFilter: filters.Cluster,
+	}
+	return b.buildQuery("power_state_counts_query", mustGetTemplate("power_state_counts_query"), params)
+}
+
+// HostPowerStateCountsQuery builds the host power state counts query.
+func (b *QueryBuilder) HostPowerStateCountsQuery(filters Filters) (string, error) {
+	params := queryParams{
+		ClusterFilter: filters.Cluster,
+	}
+	return b.buildQuery("host_power_state_counts_query", mustGetTemplate("host_power_state_counts_query"), params)
+}
+
+// CPUTierQuery builds the CPU tier distribution query.
+func (b *QueryBuilder) CPUTierQuery(filters Filters) (string, error) {
+	params := queryParams{
+		ClusterFilter: filters.Cluster,
+	}
+	return b.buildQuery("cpu_tier_query", mustGetTemplate("cpu_tier_query"), params)
+}
+
+// MemoryTierQuery builds the memory tier distribution query.
+func (b *QueryBuilder) MemoryTierQuery(filters Filters) (string, error) {
+	params := queryParams{
+		ClusterFilter: filters.Cluster,
+	}
+	return b.buildQuery("memory_tier_query", mustGetTemplate("memory_tier_query"), params)
+}
+
+// DiskSizeTierQuery builds the disk size tier distribution query.
+func (b *QueryBuilder) DiskSizeTierQuery(filters Filters) (string, error) {
+	params := queryParams{
+		ClusterFilter: filters.Cluster,
+	}
+	return b.buildQuery("disk_size_tier_query", mustGetTemplate("disk_size_tier_query"), params)
+}
+
+// DiskTypeSummaryQuery builds the disk type summary query.
+func (b *QueryBuilder) DiskTypeSummaryQuery(filters Filters) (string, error) {
+	params := queryParams{
+		ClusterFilter: filters.Cluster,
+	}
+	return b.buildQuery("disk_type_summary_query", mustGetTemplate("disk_type_summary_query"), params)
+}
+
+// ResourceTotalsQuery builds the resource totals query.
+func (b *QueryBuilder) ResourceTotalsQuery(filters Filters) (string, error) {
+	params := queryParams{
+		ClusterFilter: filters.Cluster,
+	}
+	return b.buildQuery("resource_totals_query", mustGetTemplate("resource_totals_query"), params)
+}
+
+// AllocatedVCPUsQuery builds the allocated vCPUs query.
+func (b *QueryBuilder) AllocatedVCPUsQuery(filters Filters) (string, error) {
+	params := queryParams{
+		ClusterFilter: filters.Cluster,
+	}
+	return b.buildQuery("allocated_vcpus_query", mustGetTemplate("allocated_vcpus_query"), params)
+}
+
+// AllocatedMemoryQuery builds the allocated memory query.
+func (b *QueryBuilder) AllocatedMemoryQuery(filters Filters) (string, error) {
+	params := queryParams{
+		ClusterFilter: filters.Cluster,
+	}
+	return b.buildQuery("allocated_memory_query", mustGetTemplate("allocated_memory_query"), params)
+}
+
+// TotalHostCPUsQuery builds the total host CPUs query.
+func (b *QueryBuilder) TotalHostCPUsQuery(filters Filters) (string, error) {
+	params := queryParams{
+		ClusterFilter: filters.Cluster,
+	}
+	return b.buildQuery("total_host_cpus_query", mustGetTemplate("total_host_cpus_query"), params)
+}
+
+// TotalHostMemoryQuery builds the total host memory query.
+func (b *QueryBuilder) TotalHostMemoryQuery(filters Filters) (string, error) {
+	params := queryParams{
+		ClusterFilter: filters.Cluster,
+	}
+	return b.buildQuery("total_host_memory_query", mustGetTemplate("total_host_memory_query"), params)
+}
+
+// VMCountByNetworkQuery builds the VM count by network query.
+func (b *QueryBuilder) VMCountByNetworkQuery(filters Filters) (string, error) {
+	params := queryParams{
+		ClusterFilter: filters.Cluster,
+	}
+	return b.buildQuery("vm_count_by_network_query", mustGetTemplate("vm_count_by_network_query"), params)
+}
+
+// DatacenterCountQuery builds the datacenter count query.
+func (b *QueryBuilder) DatacenterCountQuery() (string, error) {
+	return b.buildQuery("datacenter_count_query", mustGetTemplate("datacenter_count_query"), nil)
+}
+
+// ClustersPerDatacenterQuery builds the clusters per datacenter query.
+func (b *QueryBuilder) ClustersPerDatacenterQuery() (string, error) {
+	return b.buildQuery("clusters_per_datacenter_query", mustGetTemplate("clusters_per_datacenter_query"), nil)
+}
+
+// MigratableCountQuery builds the migratable VMs count query.
+func (b *QueryBuilder) MigratableCountQuery(filters Filters) (string, error) {
+	params := queryParams{
+		ClusterFilter: filters.Cluster,
+	}
+	return b.buildQuery("migratable_count_query", mustGetTemplate("migratable_count_query"), params)
+}
+
+// MigratableWithWarningsCountQuery builds the migratable with warnings count query.
+func (b *QueryBuilder) MigratableWithWarningsCountQuery(filters Filters) (string, error) {
+	params := queryParams{
+		ClusterFilter: filters.Cluster,
+	}
+	return b.buildQuery("migratable_with_warnings_count_query", mustGetTemplate("migratable_with_warnings_count_query"), params)
+}
+
+// NotMigratableCountQuery builds the not migratable VMs count query.
+func (b *QueryBuilder) NotMigratableCountQuery(filters Filters) (string, error) {
+	params := queryParams{
+		ClusterFilter: filters.Cluster,
+	}
+	return b.buildQuery("not_migratable_count_query", mustGetTemplate("not_migratable_count_query"), params)
+}
+
+// MigrationIssuesQuery builds the migration issues query.
+func (b *QueryBuilder) MigrationIssuesQuery(filters Filters, category string) (string, error) {
+	params := queryParams{
+		ClusterFilter: filters.Cluster,
+		Category:      category,
+	}
+	return b.buildQuery("migration_issues_query", mustGetTemplate("migration_issues_query"), params)
+}
+
+// ResourceBreakdownsQuery builds the resource breakdowns query.
+func (b *QueryBuilder) ResourceBreakdownsQuery(filters Filters) (string, error) {
+	params := queryParams{
+		ClusterFilter: filters.Cluster,
+	}
+	return b.buildQuery("resource_breakdowns_query", mustGetTemplate("resource_breakdowns_query"), params)
+}
+
+// VCenterQuery builds the vCenter ID query.
+func (b *QueryBuilder) VCenterQuery() (string, error) {
+	return b.buildQuery("vcenter_query", mustGetTemplate("vcenter_query"), nil)
 }
 
 func (b *QueryBuilder) buildQuery(name, tmplContent string, params any) (string, error) {

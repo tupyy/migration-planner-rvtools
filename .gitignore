@@ -1,5 +1,22 @@
-*.json
-*.xlsx
-*.db
-vendor/
+# Binaries
+*.exe
 rvtools
+demo
+
+# Test data
+*.xlsx
+*.sqlite
+*.db
+
+# Vendor
+vendor/
+
+# Local configs
+.claude/settings.local.json
+
+# IDE
+.idea/
+.vscode/
+
+# OS files
+.DS_Store

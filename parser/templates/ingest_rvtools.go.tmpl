@@ -111,6 +111,13 @@ SELECT
     TRY_CAST("Ballooned" AS INTEGER)
 FROM read_xlsx('{{.FilePath}}', sheet='vMemory', all_varchar=true);
 
+CREATE TABLE vdisk_raw AS
+SELECT * FROM read_xlsx('{{.FilePath}}', sheet='vDisk', all_varchar=true);
+
+-- Add potentially missing columns with NULL defaults
+ALTER TABLE vdisk_raw ADD COLUMN IF NOT EXISTS "Sharing mode" VARCHAR;
+ALTER TABLE vdisk_raw ADD COLUMN IF NOT EXISTS "Disk UUID" VARCHAR;
+
 INSERT INTO vdisk (
     "VM ID", "Disk Key", "Unit #", "Path", "Disk Path", "Capacity MiB",
     "Sharing mode", "Raw", "Shared Bus", "Disk Mode", "Disk UUID",
@@ -132,7 +139,9 @@ SELECT
     "Controller",
     "Label",
     "SCSI Unit #"
-FROM read_xlsx('{{.FilePath}}', sheet='vDisk', all_varchar=true);
+FROM vdisk_raw;
+
+DROP TABLE vdisk_raw;
 
 INSERT INTO vdatastore ("Hosts", "Address", "Name", "Free MiB", "MHA", "Capacity MiB", "Type")
 SELECT
@@ -145,7 +154,7 @@ SELECT
     "Type"
 FROM read_xlsx('{{.FilePath}}', sheet='vDatastore', all_varchar=true);
 
-INSERT INTO vhost ("Cluster", "# Cores", "# CPU", "Object ID", "# Memory", "Model", "Vendor", "Host")
+INSERT INTO vhost ("Cluster", "# Cores", "# CPU", "Object ID", "# Memory", "Model", "Vendor", "Host", "Config status")
 SELECT
     "Cluster",
     TRY_CAST("# Cores" AS INTEGER),
@@ -154,7 +163,8 @@ SELECT
     TRY_CAST("# Memory" AS INTEGER),
     "Model",
     "Vendor",
-    "Host"
+    "Host",
+    COALESCE(NULLIF("Config status", ''), 'green')
 FROM read_xlsx('{{.FilePath}}', sheet='vHost', all_varchar=true);
 
 INSERT INTO vhba ("Device", "Type")

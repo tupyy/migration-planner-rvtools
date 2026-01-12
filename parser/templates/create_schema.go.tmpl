@@ -121,7 +121,8 @@ CREATE TABLE IF NOT EXISTS vhost (
     "# Memory" INTEGER DEFAULT 0,
     "Model" VARCHAR,
     "Vendor" VARCHAR,
-    "Host" VARCHAR
+    "Host" VARCHAR,
+    "Config status" VARCHAR DEFAULT 'green'
 );
 
 CREATE TABLE IF NOT EXISTS vdatastore (

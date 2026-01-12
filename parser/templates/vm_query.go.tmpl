@@ -7,6 +7,11 @@ LEFT JOINs handle gracefully.
 
 Template Parameters:
   - NetworkColumns: Comma-separated list of network columns (e.g., i."Network #1", i."Network #2", ...)
+  - ClusterFilter: filter by cluster name
+  - OSFilter: filter by OS name
+  - PowerStateFilter: filter by power state
+  - Limit: max results (0 = unlimited)
+  - Offset: skip first N results
 */ -}}
 WITH disks AS (
     SELECT
@@ -46,6 +51,18 @@ nics AS (
         }) AS nics
     FROM vnetwork
     GROUP BY "VM ID"
+),
+concerns_agg AS (
+    SELECT
+        "VM_ID",
+        LIST({
+            'Id': "Concern_ID",
+            'Label': "Label",
+            'Category': "Category",
+            'Assessment': "Assessment"
+        }) AS concerns
+    FROM concerns
+    GROUP BY "VM_ID"
 )
 SELECT
     COALESCE(i."VM ID", '') AS "ID",
@@ -84,9 +101,17 @@ SELECT
     LIST_FILTER(
         LIST_VALUE({{ .NetworkColumns }}),
         x -> x IS NOT NULL AND x != '' AND x != 'VM'
-    ) AS "Networks"
+    ) AS "Networks",
+    COALESCE(con.concerns, []) AS "Concerns"
 FROM vinfo i
 LEFT JOIN vcpu c ON i."VM ID" = c."VM ID"
 LEFT JOIN vmemory m ON i."VM ID" = m."VM ID"
 LEFT JOIN disks d ON i."VM ID" = d."VM ID"
-LEFT JOIN nics n ON i."VM ID" = n."VM ID";
+LEFT JOIN nics n ON i."VM ID" = n."VM ID"
+LEFT JOIN concerns_agg con ON i."VM ID" = con."VM_ID"
+WHERE 1=1
+{{- if .ClusterFilter }} AND i."Cluster" = '{{.ClusterFilter}}'{{end}}
+{{- if .OSFilter }} AND i."OS according to the configuration file" LIKE '%{{.OSFilter}}%'{{end}}
+{{- if .PowerStateFilter }} AND i."Powerstate" = '{{.PowerStateFilter}}'{{end}}
+{{- if and .Limit (gt .Limit 0) }} LIMIT {{.Limit}}{{end}}
+{{- if and .Offset (gt .Offset 0) }} OFFSET {{.Offset}}{{end}};

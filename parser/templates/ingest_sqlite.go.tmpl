@@ -130,7 +130,7 @@ LATERAL unnest(from_json(v.NICs, '[{"network":{"kind":"VARCHAR","id":"VARCHAR"},
 LEFT JOIN src.Network n ON nic->'network'->>'id' = n.ID
 WHERE v.NICs != '[]';
 
-INSERT INTO vhost ("Cluster", "# Cores", "# CPU", "Object ID", "# Memory", "Model", "Vendor", "Host")
+INSERT INTO vhost ("Cluster", "# Cores", "# CPU", "Object ID", "# Memory", "Model", "Vendor", "Host", "Config status")
 SELECT
     c.Name,
     h.CpuCores,
@@ -139,7 +139,8 @@ SELECT
     h.MemoryBytes / 1048576,
     h.Model,
     h.Vendor,
-    h.ID
+    h.ID,
+    'green'
 FROM src.Host h
 LEFT JOIN src.Cluster c ON h.Cluster = c.ID;
 
